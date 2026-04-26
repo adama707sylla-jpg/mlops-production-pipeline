@@ -1,5 +1,4 @@
-# .github/workflows/ci_cd.yml
-name: MLOps Expert Pipeline CI/CD
+name: MLOps Production Pipeline CI/CD
 
 on:
   push:
@@ -10,11 +9,13 @@ on:
 env:
   AWS_REGION:     eu-west-3
   ECR_REPOSITORY: mlops-expert-api
-  IMAGE_TAG:      ${{ github.sha }}
+  EKS_CLUSTER:    mlops-dev
+  ACCOUNT_ID:     "718100329950"
+  ROLE_ARN:       arn:aws:iam::718100329950:role/github-actions-role-dev
 
 jobs:
 
-  # Job 1 Tests de l'API 
+  #  Job 1 : Tests 
   test:
     name: Tests API
     runs-on: ubuntu-latest
@@ -26,20 +27,23 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Installer les dépendances
-        run: |
-          pip install -r api/requirements.txt
-          pip install pytest httpx
+      - name: Installer dépendances
+        run: pip install -r api/requirements.txt pytest httpx
 
       - name: Lancer les tests
         run: |
           cd api
           pytest tests/ -v
 
-  # Job 2 Validation Terraform 
+  # Job 2 : Terraform Validate 
   terraform-validate:
     name: Terraform Validate
     runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
 
@@ -48,131 +52,137 @@ jobs:
         with:
           terraform_version: "1.7.0"
 
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Terraform Format Check
         run: terraform fmt -check -recursive terraform/
 
       - name: Terraform Validate dev
         working-directory: environments/dev
-        env:
-          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           terraform init -backend=false
           terraform validate
 
-  #  Job 3 Build et Push Docker 
+  # Job 3 : Build & Push Docker 
   build-push:
     name: Build & Push Docker
     runs-on: ubuntu-latest
-    needs: test  # attend que les tests passent
+    needs: [test, terraform-validate]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+
+    permissions:
+      id-token: write
+      contents: read
+
     outputs:
-      image_uri: ${{ steps.build.outputs.image_uri }}
+      image_tag: ${{ steps.meta.outputs.tag }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build et Push
-        id: build
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker build -t $IMAGE_URI api/
-          docker push $IMAGE_URI
-          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-          echo "Image poussée : $IMAGE_URI"
+      - name: Générer le tag image
+        id: meta
+        run: echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
 
-  #  Job 4 Deploy dev (sur develop)
+      - name: Build et Push
+        run: |
+          docker buildx create --use
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            --push \
+            -t ${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }} \
+            api/
+
+  # Job 4 : Deploy dev 
   deploy-dev:
     name: Deploy dev
     runs-on: ubuntu-latest
     needs: build-push
     if: github.ref == 'refs/heads/develop'
-    environment: dev
+
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
 
-      - name: Terraform Apply dev
-        working-directory: environments/dev
-        run: |
-          terraform init
-          terraform apply -auto-approve
-
-      - name: Deploy SageMaker Endpoint dev
-        run: |
-          pip install boto3 sagemaker
-          ENVIRONMENT=dev \
-          SAGEMAKER_ROLE_ARN=${{ secrets.SAGEMAKER_ROLE_ARN }} \
-          python sagemaker/deploy_endpoint.py
-
-      - name: Update Kubernetes dev
+      - name: Configurer kubeconfig EKS
         run: |
           aws eks update-kubeconfig \
-            --name mlops-dev \
-            --region $AWS_REGION
-          kubectl set image deployment/smartreview-api \
-            api=${{ needs.build-push.outputs.image_uri }} \
-            -n mlops
+            --name ${{ env.EKS_CLUSTER }} \
+            --region ${{ env.AWS_REGION }}
 
-  # Job 5 Deploy prod (sur main) 
+      - name: Déployer sur EKS dev
+        run: |
+          kubectl set image deployment/smartreview-api \
+            api=${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ needs.build-push.outputs.image_tag }} \
+            -n mlops
+          kubectl rollout status deployment/smartreview-api -n mlops --timeout=300s
+
+      - name: Vérifier le déploiement
+        run: |
+          kubectl get pods -n mlops
+          kubectl get svc -n mlops
+
+  # Job 5 : Deploy prod 
   deploy-prod:
     name: Deploy prod
     runs-on: ubuntu-latest
     needs: build-push
     if: github.ref == 'refs/heads/main'
-    environment: prod  # requiert une approbation manuelle dans GitHub
+    environment: prod
+
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
 
-      - name: Terraform Apply prod
-        working-directory: environments/prod
-        run: |
-          terraform init
-          terraform apply -auto-approve
-
-      - name: Deploy SageMaker Endpoint prod
-        run: |
-          pip install boto3 sagemaker
-          ENVIRONMENT=prod \
-          SAGEMAKER_ROLE_ARN=${{ secrets.SAGEMAKER_ROLE_ARN }} \
-          python sagemaker/deploy_endpoint.py
-
-      - name: Update Kubernetes prod
+      - name: Configurer kubeconfig EKS prod
         run: |
           aws eks update-kubeconfig \
             --name mlops-prod \
-            --region $AWS_REGION
+            --region ${{ env.AWS_REGION }}
+
+      - name: Déployer sur EKS prod
+        run: |
           kubectl set image deployment/smartreview-api \
-            api=${{ needs.build-push.outputs.image_uri }} \
+            api=${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ needs.build-push.outputs.image_tag }} \
             -n mlops
+          kubectl rollout status deployment/smartreview-api -n mlops --timeout=300s
