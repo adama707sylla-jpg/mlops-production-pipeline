@@ -31,4 +31,11 @@ def test_predict_batch():
         "reviews": ["great product", "terrible quality"]
     })
     assert r.status_code == 200
-    assert len(r.json()["predictions"]) == 2
+    # Vérifier que la réponse a une clé "predictions"
+    data = r.json()
+    assert "predictions" in data
+    assert len(data["predictions"]) == 2
+    # Vérifier chaque prédiction
+    for pred in data["predictions"]:
+        assert "prediction" in pred
+        assert "confidence" in pred
