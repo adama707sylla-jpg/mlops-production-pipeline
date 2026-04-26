@@ -5,10 +5,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import unittest.mock as mock
 with mock.patch("joblib.load") as mock_load:
     mock_model = mock.MagicMock()
-    mock_model.predict.return_value       = [1]
-    mock_model.predict_proba.return_value = [[0.1, 0.9]]
+    mock_model.predict.return_value       = [1, 0]           # ← 2 valeurs
+    mock_model.predict_proba.return_value = [[0.1, 0.9], [0.8, 0.2]]  # ← 2 valeurs
     mock_load.return_value = mock_model
-    from main import app  # ← pas api.main, juste main
+    from main import app
 
 from fastapi.testclient import TestClient
 client = TestClient(app)
