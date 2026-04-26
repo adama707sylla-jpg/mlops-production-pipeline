@@ -32,7 +32,9 @@ jobs:
           pip install pytest httpx
 
       - name: Lancer les tests
-        run: pytest api/tests/ -v
+        run: |
+          cd api
+          pytest tests/ -v
 
   # Job 2 Validation Terraform 
   terraform-validate:

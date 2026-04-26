@@ -22,7 +22,7 @@ module "sagemaker" {
 module "eks" {
   source        = "../../terraform/modules/eks"
   cluster_name  = "mlops-dev"
-  instance_type = "t3.small"  # ← Free Tier eligible
+  instance_type = "t3.small" # ← Free Tier eligible
   min_nodes     = 1
   max_nodes     = 2
 }
@@ -34,7 +34,7 @@ module "monitoring" {
   alarm_email             = "adama@email.com"
   drift_threshold         = 0.3
   sagemaker_endpoint_name = "smartreview-endpoint-dev"
-} 
+}
 
 
 module "github_oidc" {

@@ -1,7 +1,7 @@
 
 
 resource "aws_s3_bucket" "ml_artifacts" {
-  bucket = "${var.bucket_name}-${var.environment}"   # ← environment sans accent
+  bucket = "${var.bucket_name}-${var.environment}" # ← environment sans accent
   tags = {
     Environment = var.environment
     Project     = var.project_name
@@ -41,7 +41,7 @@ resource "aws_iam_role" "sagemaker_exec" {
   })
   tags = {
     Project     = var.project_name
-    Environment = var.environment   # ← corrigé
+    Environment = var.environment # ← corrigé
   }
 }
 

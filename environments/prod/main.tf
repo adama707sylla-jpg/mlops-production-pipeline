@@ -12,7 +12,7 @@ provider "aws" {
   region = "eu-west-3"
 }
 
-module "sagemaker"  {
+module "sagemaker" {
   source       = "../../terraform/modules/sagemaker"
   environment  = "prod"
   bucket_name  = "mlops-expert-artifacts"
@@ -28,10 +28,10 @@ module "eks" {
 }
 
 module "monitoring" {
-  source                 = "../../terraform/modules/monitoring"
-  environment            = "prod"
-  project_name           = "mlops-expert"
-  alarm_email            = "adama@email.com"
-  drift_threshold        = 0.15
+  source                  = "../../terraform/modules/monitoring"
+  environment             = "prod"
+  project_name            = "mlops-expert"
+  alarm_email             = "adama@email.com"
+  drift_threshold         = 0.15
   sagemaker_endpoint_name = "smartreview-endpoint-prod"
 }

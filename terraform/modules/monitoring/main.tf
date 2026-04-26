@@ -2,9 +2,9 @@
 resource "aws_sns_topic" "alerts" {
   name = "${var.project_name}-alerts-${var.environment}"
   tags = {
-  project  = var.project_name
-  Environnement = var.environment
-}
+    project       = var.project_name
+    Environnement = var.environment
+  }
 }
 
 # Subscription pour recevoir les alertes par email
@@ -57,13 +57,13 @@ resource "aws_cloudwatch_dashboard" "ml_monitoring" {
         width  = 12
         height = 6
         properties = {
-          title   = "Endpoint Invocations"
-          region  = "eu-west-3"        # ← manquait
-          period  = 300
-          stat    = "Sum"              # ← manquait
-          view    = "timeSeries"       # ← manquait
+          title  = "Endpoint Invocations"
+          region = "eu-west-3" # ← manquait
+          period = 300
+          stat   = "Sum"        # ← manquait
+          view   = "timeSeries" # ← manquait
           metrics = [["AWS/SageMaker", "Invocations",
-            "EndpointName", var.sagemaker_endpoint_name]]
+          "EndpointName", var.sagemaker_endpoint_name]]
         }
       },
       {
@@ -73,13 +73,13 @@ resource "aws_cloudwatch_dashboard" "ml_monitoring" {
         width  = 12
         height = 6
         properties = {
-          title   = "Latence modèle (ms)"
-          region  = "eu-west-3"
-          period  = 300
-          stat    = "Average"
-          view    = "timeSeries"
+          title  = "Latence modèle (ms)"
+          region = "eu-west-3"
+          period = 300
+          stat   = "Average"
+          view   = "timeSeries"
           metrics = [["AWS/SageMaker", "ModelLatency",
-            "EndpointName", var.sagemaker_endpoint_name]]
+          "EndpointName", var.sagemaker_endpoint_name]]
         }
       },
       {
@@ -89,14 +89,14 @@ resource "aws_cloudwatch_dashboard" "ml_monitoring" {
         width  = 24
         height = 6
         properties = {
-          title   = "Data Drift Distance"
-          region  = "eu-west-3"
-          period  = 3600
-          stat    = "Average"
-          view    = "timeSeries"
+          title  = "Data Drift Distance"
+          region = "eu-west-3"
+          period = 3600
+          stat   = "Average"
+          view   = "timeSeries"
           metrics = [["aws/sagemaker/Endpoints/data-metrics",
             "feature_baseline_drift_distance",
-            "Endpoint", var.sagemaker_endpoint_name]]
+          "Endpoint", var.sagemaker_endpoint_name]]
         }
       }
     ]
