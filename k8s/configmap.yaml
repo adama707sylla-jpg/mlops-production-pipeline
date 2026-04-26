@@ -1,0 +1,12 @@
+# k8s/configmap.yaml
+# ConfigMap stocke la config non-sensible accessible par les pods
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: smartreview-config
+  namespace: mlops
+data:
+  MODEL_PATH: "model/model.pkl"
+  LOG_LEVEL: "info"
+  AWS_REGION: "eu-west-3"
+  

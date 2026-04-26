@@ -1,0 +1,61 @@
+# k8s/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smartreview-api
+  namespace: mlops
+  labels:
+    app: smartreview-api
+spec:
+  replicas: 2  # 2 pods minimum pour la haute disponibilité
+  selector:
+    matchLabels:
+      app: smartreview-api
+  template:
+    metadata:
+      labels:
+        app: smartreview-api
+    spec:
+      containers:
+        - name: api
+          image: 718100329950.dkr.ecr.eu-west-3.amazonaws.com/mlops-expert-api:v8
+          ports:
+            - containerPort: 8080
+
+          # Resource limits critique en prod
+          # sans ça un pod peut consommer toute la RAM du node
+          resources:
+            requests:
+              memory: "256Mi"  # mémoire garantie au pod
+              cpu: "250m"      # 0.25 vCPU garanti
+            limits:
+              memory: "512Mi"  # jamais plus de 512Mo
+              cpu: "500m"      # jamais plus de 0.5 vCPU
+
+          # Readiness probe — K8s n'envoie du trafic que si ça répond 200
+          # sans ça, les requêtes arrivent avant que le modèle soit chargé
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10  # attend 10s avant le premier check
+            periodSeconds: 5         # vérifie toutes les 5s
+            failureThreshold: 3      # 3 échecs → pod marqué not ready
+
+          # Liveness probe — K8s redémarre le pod si ça ne répond plus
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # Variables d'environnement
+          env:
+            - name: MODEL_PATH
+              value: "model/model.pkl"
+            - name: ENVIRONMENT
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace

@@ -1,0 +1,25 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform.lock.hcl
+
+# Modèles — trop lourds pour GitHub
+model/*.pkl
+api/model/*.pkl
+*.pkl
+
+# Fichiers sensibles
+output.json
+input.json
+model.tar.gz
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# OS
+.DS_Store
+desktop.ini

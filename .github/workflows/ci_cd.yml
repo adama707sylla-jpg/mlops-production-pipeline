@@ -1,0 +1,176 @@
+# .github/workflows/ci_cd.yml
+name: MLOps Expert Pipeline CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION:     eu-west-3
+  ECR_REPOSITORY: mlops-expert-api
+  IMAGE_TAG:      ${{ github.sha }}
+
+jobs:
+
+  # Job 1 Tests de l'API 
+  test:
+    name: Tests API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Installer les dépendances
+        run: |
+          pip install -r api/requirements.txt
+          pip install pytest httpx
+
+      - name: Lancer les tests
+        run: pytest api/tests/ -v
+
+  # Job 2 Validation Terraform 
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Terraform Validate dev
+        working-directory: environments/dev
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  #  Job 3 Build et Push Docker 
+  build-push:
+    name: Build & Push Docker
+    runs-on: ubuntu-latest
+    needs: test  # attend que les tests passent
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build et Push
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t $IMAGE_URI api/
+          docker push $IMAGE_URI
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "Image poussée : $IMAGE_URI"
+
+  #  Job 4 Deploy dev (sur develop)
+  deploy-dev:
+    name: Deploy dev
+    runs-on: ubuntu-latest
+    needs: build-push
+    if: github.ref == 'refs/heads/develop'
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Apply dev
+        working-directory: environments/dev
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
+      - name: Deploy SageMaker Endpoint dev
+        run: |
+          pip install boto3 sagemaker
+          ENVIRONMENT=dev \
+          SAGEMAKER_ROLE_ARN=${{ secrets.SAGEMAKER_ROLE_ARN }} \
+          python sagemaker/deploy_endpoint.py
+
+      - name: Update Kubernetes dev
+        run: |
+          aws eks update-kubeconfig \
+            --name mlops-dev \
+            --region $AWS_REGION
+          kubectl set image deployment/smartreview-api \
+            api=${{ needs.build-push.outputs.image_uri }} \
+            -n mlops
+
+  # Job 5 Deploy prod (sur main) 
+  deploy-prod:
+    name: Deploy prod
+    runs-on: ubuntu-latest
+    needs: build-push
+    if: github.ref == 'refs/heads/main'
+    environment: prod  # requiert une approbation manuelle dans GitHub
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Apply prod
+        working-directory: environments/prod
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
+      - name: Deploy SageMaker Endpoint prod
+        run: |
+          pip install boto3 sagemaker
+          ENVIRONMENT=prod \
+          SAGEMAKER_ROLE_ARN=${{ secrets.SAGEMAKER_ROLE_ARN }} \
+          python sagemaker/deploy_endpoint.py
+
+      - name: Update Kubernetes prod
+        run: |
+          aws eks update-kubeconfig \
+            --name mlops-prod \
+            --region $AWS_REGION
+          kubectl set image deployment/smartreview-api \
+            api=${{ needs.build-push.outputs.image_uri }} \
+            -n mlops

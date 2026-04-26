@@ -1,0 +1,18 @@
+# k8s/service.yaml
+# Le Service expose les pods à l'extérieur via un Load Balancer AWS
+apiVersion: v1
+kind: Service
+metadata:
+  name: smartreview-service
+  namespace: mlops
+  annotations:
+    # AWS crée automatiquement un ELB quand type=LoadBalancer
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+  type: LoadBalancer
+  selector:
+    app: smartreview-api  # cible tous les pods avec ce label
+  ports:
+    - protocol: TCP
+      port: 80         # port externe — tu appelles http://ELB_URL/predict
+      targetPort: 8080 # port interne du conteneur
