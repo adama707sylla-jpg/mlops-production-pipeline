@@ -90,16 +90,6 @@ jobs:
           role-to-assume: ${{ env.ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Télécharger le modèle depuis S3
-        run: |
-          aws s3 cp \
-            s3://mlops-expert-artifacts-dev/models/smartreview/model.tar.gz \
-            model.tar.gz
-          mkdir -p api/model
-          tar -xzf model.tar.gz -C api/model/
-          mv api/model/model.pkl api/model/model.pkl
-          ls -la api/model/
-
       - name: Login ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -108,6 +98,16 @@ jobs:
         id: meta
         run: echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
 
+      - name: Télécharger le modèle depuis S3
+        run: |
+          aws s3 cp \
+            s3://mlops-expert-artifacts-dev/models/smartreview/model.tar.gz \
+            model.tar.gz
+          mkdir -p api/model
+          tar -xzf model.tar.gz -C api/model/
+          ls -la api/model/      
+
+          
       - name: Build et Push
         run: |
           docker buildx create --use
