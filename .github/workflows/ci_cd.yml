@@ -15,7 +15,7 @@ env:
 
 jobs:
 
-  # Job 1 : Tests 
+  # Job 1 : Tests
   test:
     name: Tests API
     runs-on: ubuntu-latest
@@ -35,7 +35,7 @@ jobs:
           cd api
           pytest tests/ -v
 
-  # Job 2 : Terraform Validate 
+  # Job 2 : Terraform Validate
   terraform-validate:
     name: Terraform Validate
     runs-on: ubuntu-latest
@@ -105,9 +105,8 @@ jobs:
             model.tar.gz
           mkdir -p api/model
           tar -xzf model.tar.gz -C api/model/
-          ls -la api/model/      
+          ls -la api/model/
 
-          
       - name: Build et Push
         run: |
           docker buildx create --use
@@ -119,7 +118,7 @@ jobs:
             -t ${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }} \
             api/
 
-  # Job 4 : Deploy dev 
+  # Job 4 : Deploy dev
   deploy-dev:
     name: Deploy dev
     runs-on: ubuntu-latest
@@ -160,7 +159,7 @@ jobs:
           kubectl get pods -n mlops
           kubectl get svc -n mlops
 
-  # Job 5 : Deploy prod 
+  # Job 5 : Deploy prod
   deploy-prod:
     name: Deploy prod
     runs-on: ubuntu-latest
@@ -187,7 +186,7 @@ jobs:
       - name: Configurer kubeconfig EKS prod
         run: |
           aws eks update-kubeconfig \
-            --name mlops-prod \
+            --name mlops-dev \
             --region ${{ env.AWS_REGION }}
 
       - name: Déployer sur EKS prod
@@ -196,3 +195,8 @@ jobs:
             api=${{ env.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ needs.build-push.outputs.image_tag }} \
             -n mlops
           kubectl rollout status deployment/smartreview-api -n mlops --timeout=300s
+
+      - name: Vérifier le déploiement prod
+        run: |
+          kubectl get pods -n mlops
+          kubectl get svc -n mlops
