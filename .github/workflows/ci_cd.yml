@@ -67,6 +67,14 @@ jobs:
           terraform init -backend=false
           terraform validate
 
+      - name: Télécharger le modèle depuis S3
+        run: |
+          aws s3 cp s3://mlops-expert-artifacts-dev/models/smartreview/model.tar.gz model.tar.gz
+          mkdir -p api/model
+          tar -xzf model.tar.gz -C api/model/
+          mv api/model/model.pkl api/model/model.pkl
+          ls -la api/model/   
+
   # Job 3 : Build & Push Docker 
   build-push:
     name: Build & Push Docker
