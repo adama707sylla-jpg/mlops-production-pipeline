@@ -7,8 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 
-# Le modèle est maintenant à la racine du projet
-COPY ../model/ ./model/
+# Le modèle est dans api/model/ — dans le contexte de build
+COPY model/ ./model/
 
 RUN printf '#!/bin/bash\nexec uvicorn main:app --host 0.0.0.0 --port 8080\n' > /usr/local/bin/serve \
     && chmod +x /usr/local/bin/serve
